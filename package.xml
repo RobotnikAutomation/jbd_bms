@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>jbd_bms</name>
+  <version>0.1.0</version>
+  <description>The jbd_bms package, based on RComponent structure. ROS package to communicate with the JBD Smart BMS</description>
+
+  <maintainer email="jgomez@robotnik.es">José Gómez</maintainer>
+
+  <author email="jgomez@robotnik.es">José Gómez</author>
+
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  
+  <build_depend>rospy</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>std_srvs</build_depend>
+  <build_depend>rcomponent</build_depend>
+
+  <build_export_depend>rospy</build_export_depend>
+
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>rcomponent</exec_depend>
+
+  <export>
+
+  </export>
+</package>

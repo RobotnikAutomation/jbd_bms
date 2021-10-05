@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<launch>
+
+	<!-- Desired frequency -->
+	<arg name="desired_freq" default="5.0" />
+
+	<!-- Name of the serial port -->
+	<arg name="port" default="/dev/ttyUSB_JDB_BMS" />
+
+	<!-- start JbdBms node -->
+	<node name="jbd_bms" pkg="jbd_bms" type="jbd_bms_node.py" output="screen" respawn="false">
+		<param name="desired_freq" value="$(arg desired_freq)"/>
+		<param name="port" value="$(arg port)"/>
+	</node>
+
+</launch>
