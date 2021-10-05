@@ -6,6 +6,7 @@ from rcomponent.rcomponent import *
 # Insert here general imports:
 import serial
 from serial import SerialException
+from binascii import hexlify, unhexlify
 
 # Insert here msg and srv imports:
 from std_msgs.msg import String
@@ -29,14 +30,14 @@ class JbdBms(RComponent):
 
         self.serial_device = serial.Serial(
             port= self.port,
-            baudrate=115200,
+            baudrate=9600,
             parity=serial.PARITY_NONE,
             stopbits=1,
             bytesize=8,
             timeout=0.1,
             xonxoff=False,
             dsrdtr=False,
-        rtscts=False
+            rtscts=False
         )
 
     def ros_read_params(self):
@@ -44,7 +45,7 @@ class JbdBms(RComponent):
         RComponent.ros_read_params(self)
 
         self.port = rospy.get_param(
-            '~port', '/dev/ttyUSB_JDB_BMS')
+            '~port', '/dev/ttyUSB_JBD_BMS')
 
     def ros_setup(self):
         """Creates and inits ROS components"""
@@ -69,12 +70,6 @@ class JbdBms(RComponent):
     def ready_state(self):
         """Actions performed in ready state"""
 
-        # Check topic health
-
-        if(self.check_topics_health() == False):
-            self.switch_to_state(State.EMERGENCY_STATE)
-            return RComponent.ready_state(self)
-
         # Publish topic with status
 
         status_stamped = StringStamped()
@@ -86,9 +81,16 @@ class JbdBms(RComponent):
 
         # Get battery values
 
-        self.writeToSerialDevice("?DD A5 03 00 FF FD 77")
-        line_read = str(self.readFromSerialDevice())
-        print(line_read)
+        try:
+            self.writeToSerialDevice("DDA50300FFFD77")
+            rospy.sleep(0.1)
+            line_read = str(self.readFromSerialDevice())
+            hex_data = line_read.split("dd03001b")[1]
+            self.voltage = self.twos_complement(hex_data[0:4]) / 100.0
+            self.current = self.twos_complement(hex_data[4:8]) / 100.0
+            self.level = self.twos_complement(hex_data[38:40])
+        except Exception, e:
+            rospy.logerr('%s::readyState: error reading BMS values: %s', rospy.get_name(), e)
 
         # Publish topic with data
 
@@ -96,6 +98,8 @@ class JbdBms(RComponent):
         data.current = self.current
         data.voltage = self.voltage
         data.level = self.level
+        if (self.current > 0.0):
+            data.is_charging = True
         self.data_pub.publish(data)
 
         return RComponent.ready_state(self)
@@ -120,14 +124,27 @@ class JbdBms(RComponent):
         return RComponent.switch_to_state(self, new_state)
 
     def writeToSerialDevice(self, data):
-        bytes_written = self.serial_device.write(data)
+        data_write = unhexlify(data)
+        bytes_written = self.serial_device.write(data_write)
         return bytes_written
 
     def readFromSerialDevice(self):
         try:
-            data_read = self.serial_device.readline()
+            data_read = self.serial_device.read_all()
+            return hexlify(data_read)
         except SerialException as e:
             rospy.logwarn(e)
             return
 
-        return data_read
+    def to_little_endian(self, val):
+        little_hex = bytearray.fromhex(val)
+        little_hex.reverse()
+        str_little = ''.join(format(x, '02x') for x in little_hex)
+        return str_little
+
+    def twos_complement(self, hexval):
+        bits = 16 # Number of bits in a hexadecimal number format
+        val = int(hexval, bits)
+        if val & (1 << (bits-1)):
+            val -= 1 << bits
+        return val
