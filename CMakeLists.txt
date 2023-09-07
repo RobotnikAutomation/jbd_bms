@@ -45,6 +45,6 @@ catkin_install_python(PROGRAMS
 
 ## Modify this if launch or config folders are deleted
 install(
-  DIRECTORY launch config
+  DIRECTORY launch
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
