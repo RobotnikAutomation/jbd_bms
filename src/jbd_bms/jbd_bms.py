@@ -89,7 +89,7 @@ class JbdBms(RComponent):
             self.voltage = self.twos_complement(hex_data[0:4]) / 100.0
             self.current = self.twos_complement(hex_data[4:8]) / 100.0
             self.level = self.twos_complement(hex_data[38:40])
-        except Exception, e:
+        except Exception as e:
             rospy.logerr('%s::readyState: error reading BMS values: %s', rospy.get_name(), e)
 
         # Publish topic with data
