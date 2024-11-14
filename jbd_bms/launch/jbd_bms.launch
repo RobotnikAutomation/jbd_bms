@@ -1,16 +1,44 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <launch>
 
-	<!-- Desired frequency -->
-	<arg name="desired_freq" default="5.0" />
+  <arg
+    name="port"
+    default="$(env ROBOT_BMS_PORT /dev/ttyUSB_BMS)"
+  />
+  <arg
+    name="desired_freq"
+    default="$(env DESIRED_FREQ 2.0)"
+  />
+  <arg
+    name="node_name"
+    default="$(env NODE_NAME battery_estimator)"
+  />
+  <arg
+    name="robot_id"
+    default="$(env ROBOT_ID robot)"
+  />
 
-	<!-- Name of the serial port -->
-	<arg name="port" default="$(optenv ROBOT_BMS_PORT /dev/ttyUSB_BMS)"/>
+  <arg
+    name="log_level"
+    default="$(env LOG_LEVEL INFO)"
+  />
 
-	<!-- start JbdBms node -->
-	<node name="battery_estimator" pkg="jbd_bms" type="jbd_bms_node.py" output="screen" respawn="false">
-		<param name="desired_freq" value="$(arg desired_freq)"/>
-		<param name="port" value="$(arg port)"/>
-	</node>
+  <node
+    pkg="jbd"
+    exec="jbd_bms_node"
+    name="$(var node_name)"
+    namespace="/$(var robot_id)"
+    ros_args="--log-level $(var log_level)"
+    output="screen"
+  >
+    <param
+      name="serial_port"
+      value="$(var port)"
+    />
+    <param
+      name="publish_freq"
+      value="$(var desired_freq)"
+    />
+  </node>
 
 </launch>
