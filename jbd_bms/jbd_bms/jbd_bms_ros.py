@@ -253,9 +253,10 @@ class JbdBMSROS2(Node):
         if not self._jbd.retrieve_data():
             return False
         summary_data = self._jbd.get_data()
+        print(summary_data)
         self._battery_data = copy_dataclass_to_ros_message(
             summary_data,
-            self._battery_data.status
+            self._battery_data
         )
         self.ros_publish()
         return True
@@ -267,4 +268,4 @@ class JbdBMSROS2(Node):
         This method publishes the current battery status to its respective
         ROS topic using the previously set up publisher.
         """
-        self._publisher_status.publish(self._battery_data.status)
+        self._publisher_status.publish(self._battery_data)

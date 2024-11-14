@@ -43,10 +43,10 @@ from .jbd_bms_dataclasses import ReceivedData, BatteryData
 JBDPROTCONST = JBDProtocol()
 COMMANDS = {
     "status": JBDCommand(
-        command=JBDProtocol.status_cmd
+        command=JBDPROTCONST.commands.status
     ),
     "cell": JBDCommand(
-        command=JBDProtocol.cell_cmd
+        command=JBDPROTCONST.commands.cell
     ),
 }
 
@@ -91,7 +91,7 @@ class JbdBMS(SerialPort):
         ):
             self._logger.info("Command not sent")
             return False
-        if not self._read_serial_data():
+        if not self._read_serial_data(command):
             self._logger.info("No data received")
             return False
         if not self._process_serial_data(command):
@@ -123,6 +123,9 @@ class JbdBMS(SerialPort):
         try:
             self._serial.device.write(command)
             self._serial.device.flush()
+            formatted_bytes = [f'0x{byte:02X}' for byte in command]
+            formatted_data = ' '.join(formatted_bytes)
+            self._logger.debug(f'SENT RAW DATA: {formatted_data}')
             self._serial.processing = True
             return True
         except serial.SerialException as var:
@@ -131,6 +134,7 @@ class JbdBMS(SerialPort):
 
     def _read_serial_data(
         self,
+        command
     ):
         """
         Read data from the serial port.
@@ -143,12 +147,14 @@ class JbdBMS(SerialPort):
 
         """
         # Set a total timeout for the entire operation
+
         total_timeout = self._serial.device.timeout
         start_time = time.time()
-        minimal_response = 4
         self._serial.ready = False
-        try:
-            while len(self._serial.data) < minimal_response:
+        serial_data = bytearray()
+
+        def read_serial_data(length):
+            while len(self._serial.data) < length:
                 if time.time() - start_time > total_timeout:
                     self._logger.debug(
                         "Total timeout exceeded. "
@@ -156,7 +162,7 @@ class JbdBMS(SerialPort):
                     )
                     break
                 chunk = self._serial.device.read(
-                    minimal_response - len(self._serial.data)
+                    length - len(self._serial.data)
                 )
                 if chunk:
                     # Append the received bytes to our buffer
@@ -165,17 +171,72 @@ class JbdBMS(SerialPort):
                         f"Received {len(chunk)} bytes. "
                         f"Total: {len(self._serial.data)} bytes."
                     )
-            if not len(self._serial.data) == minimal_response:
+
+            if len(self._serial.data) < length:
                 self._logger.debug(
                     "Incomplete data. "
-                    f"Received {len(self._serial.data)} bytes:"
+                    f"Received {len(self._serial.data)} bytes."
                 )
+                self._print_hex(
+                    data=self._serial.data,
+                    message="RECEIVED"
+                )
+                self.clear_buffer()
                 self._serial.processing = False
                 return False
+            return True
 
-            formatted_bytes = [f'0x{byte:02X}' for byte in self._serial.data]
-            formatted_data = ' '.join(formatted_bytes)
-            self._logger.debug(f'RAW DATA: {formatted_data}')
+        try:
+            # process header
+            header_length = JBDPROTCONST.length.header
+            if not read_serial_data(header_length):
+                return False
+            header = serial_data
+            # REMOVE IT!!! it's for debug
+            valid = bytearray(
+                [0xDD, 0x03, 0x00, 0x1B]
+            )
+            # REMOVE IT!!! it's for debug
+            header[0:4] = valid
+            self._print_hex(
+                data=header,
+                message="RECEIVED HEADER"
+            )
+            self._preparse_rawdata_header(header)
+            self.clear_buffer()
+            if not self._validate_header(command):
+                self._serial.processing = False
+                return False
+            data_length = self._preparsed_raw_data.length
+            footer = JBDPROTCONST.length.footer
+            if not read_serial_data(data_length + footer):
+                return False
+
+            self._print_hex(
+                data=self._serial.data,
+                message="RECEIVED"
+            )
+            # REMOVE IT!!! it's for debug
+            valid = bytearray([
+                0x17, 0x00, 0x00, 0x00, 0x02, 0xD0, 0x03, 0xE8,
+                0x00, 0x00, 0x20, 0x78, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x10, 0x48, 0x03, 0x0F, 0x02, 0x0B,
+                0x76, 0x0B, 0x82,
+                0xFB, 0xFF, 0x77
+            ])
+            # SWAP IT!!! it's for debug
+            # if not self._preparse_rawdata(self._serial.data):
+            if not self._preparse_rawdata(valid):
+                return False
+            self._print_hex(
+                data=self._serial.data,
+                message="REAL"
+            )
+            # REMOVE IT!!! it's for debug
+            self._print_hex(
+                data=valid,
+                message="FAKE"
+            )
             self._serial.ready = True
             self._serial.processing = False
 
@@ -183,6 +244,19 @@ class JbdBMS(SerialPort):
         except serial.SerialException as var:
             self._handle_serial_exception(var)
             return False
+
+    def _print_hex(self, data, message):
+        formatted_bytes = [f'0x{byte:02X}' for byte in data]
+        formatted_data = ' '.join(formatted_bytes)
+        self._logger.debug(f"{message} RAW DATA: {formatted_data}")
+
+    def clear_buffer(self):
+        # clear the buffer
+        self._serial.data = bytearray()
+        self._logger.debug(
+            "clearer buffer"
+            f" buffer size: {len(self._serial.data)}"
+        )
 
     def _process_serial_data(self, command):
         """
@@ -196,20 +270,58 @@ class JbdBMS(SerialPort):
 
         """
 
-        def clear_buffer():
-            # clear the buffer
-            self._serial.data = bytearray()
-            self._logger.debug(
-                "clearer buffer"
-                f" buffer size: {len(self._serial.data)}"
-            )
         if not self._serial.ready:
             return False
         self._serial.ready = False
-        self._preparse_rawdata(self._serial.data)
-        if self._validate_data(command):
+        # if not self._preparse_rawdata(self._serial.data):
+        #     return False
+        if not self._validate_data():
             return False
+        self._fill_summary()
         return True
+
+    def _preparse_rawdata_header(
+        self,
+        raw_data
+    ):
+        """
+        Separate the fields of the raw data array into structured components.
+
+        This method parses the raw data received from the BMS and assigns
+        each component to the corresponding attribute of the
+        _preparsed_raw_data object. It extracts the header, command, response,
+        length, data, checksum, and footer from the raw data array.
+
+        Parameters
+        ----------
+        raw_data : list or bytes
+            The raw data array received from the BMS.
+
+        Returns
+        -------
+        bool
+            True if parsing was successful, False otherwise.
+
+        Notes
+        -----
+        The method assumes a specific structure for the raw_data:
+        - Index 0: Header
+        - Index 1: Command
+        - Index 2: Response
+        - Index 3: Length (N)
+        - Index 4 to N-3: Data payload
+        - Index N-3 to N-1: Checksum (2 bytes)
+        - Index N: Footer
+
+        The parsed data is stored in the self._preparsed_raw_data object,
+        which is assumed to have attributes corresponding to each component.
+
+        This method updates the internal _preparsed_raw_data object.
+        """
+        self._preparsed_raw_data.header = raw_data[0]
+        self._preparsed_raw_data.command = raw_data[1]
+        self._preparsed_raw_data.response = raw_data[2]
+        self._preparsed_raw_data.length = raw_data[3]
 
     def _preparse_rawdata(
         self,
@@ -220,14 +332,18 @@ class JbdBMS(SerialPort):
 
         This method parses the raw data received from the BMS and assigns
         each component to the corresponding attribute of the
-        _preparsed_raw_data object. It extracts the
-        header, command, response, length, data,
-        checksum, and footer from the raw data array.
+        _preparsed_raw_data object. It extracts the header, command, response,
+        length, data, checksum, and footer from the raw data array.
 
         Parameters
         ----------
         raw_data : list or bytes
             The raw data array received from the BMS.
+
+        Returns
+        -------
+        bool
+            True if parsing was successful, False otherwise.
 
         Notes
         -----
@@ -235,41 +351,143 @@ class JbdBMS(SerialPort):
         - Index 0: Header
         - Index 1: Command
         - Index 2: Response
-        - Index 3: Length
-        - Index 4 to -3: Data payload
-        - Index -3 to -1: Checksum (2 bytes)
-        - Index -1: Footer
+        - Index 3: Length (N)
+        - Index 4 to N-3: Data payload
+        - Index N-3 to N-1: Checksum (2 bytes)
+        - Index N: Footer
 
         The parsed data is stored in the self._preparsed_raw_data object,
         which is assumed to have attributes corresponding to each component.
 
-        This method does not return any value but updates the internal
-        _preparsed_raw_data object.
+        This method updates the internal _preparsed_raw_data object.
         """
-        self._preparsed_raw_data.header = raw_data[0]
-        self._preparsed_raw_data.command = raw_data[1]
-        self._preparsed_raw_data.response = raw_data[2]
-        self._preparsed_raw_data.length = raw_data[3]
-        self._preparsed_raw_data.data = raw_data[4:-3]
+        if len(raw_data) < JBDPROTCONST.length.total:
+            self._logger.warn(
+                "Data length below minimun "
+                f" Minimum: {JBDPROTCONST.length.total} "
+                f" Received: {len(raw_data)}"
+            )
+            return False
+        self._preparsed_raw_data.data = raw_data[0:-3]
         self._preparsed_raw_data.checksum = raw_data[-3:-1]
         self._preparsed_raw_data.footer = raw_data[-1]
+        return True
 
-    def _validate_data(self, command):
+
+    def _validation_engine(self, validations):
         """
-        Validate the received data stream from the JBD BMS.
+        Perform a series of validations on the received data.
 
-        This method performs a series of checks on the preparsed
-        raw data to ensure its integrity and compliance with the JBD protocol.
-        It verifies the header, command, response, length, checksum,
-        and footer of the data stream.
+        This method iterates through a list of validation checks, comparing
+        received values against expected values. It handles different formats
+        for the comparisons and logs errors for any mismatches.
 
-        The method uses internal helper functions to
-        calculate the checksum and print error messages.
+        Parameters
+        ----------
+        validations : list of dict
+            A list of dictionaries, each containing:
+            - 'description': str, description of the validation
+            - 'received': any, the received value
+            - 'expected': any, the expected value
+            - 'format': str, the format for comparison ('hex', 'int', or other)
+
+        Returns
+        -------
+        bool
+            True if all validations pass, False otherwise.
+
+        Notes
+        -----
+        For each failed validation, an error is logged with
+        the discrepancy details.
+        The method stops at the first failed validation.
+        """
+        for validation in validations:
+            self._logger.debug(
+                f"Validating {validation['description']}"
+            )
+            if validation["received"] != validation["expected"]:
+                if validation["format"] == "hex":
+                    received = f'0x{validation["received"]:02X}'
+                    expected = f'0x{validation["expected"]:02X}'
+                elif validation["format"] == "int":
+                    received = int(validation["received"])
+                    expected = int(validation["expected"])
+                else:
+                    received = validation["received"]
+                    expected = validation["expected"]
+                self._logger.warn(
+                    f"Data stream error: Wrong {validation['description']} "
+                    f"received: {received} "
+                    f"expected: {expected}"
+                )
+                return False
+            self._logger.debug(
+                f"{validation['description']} Valid"
+            )
+        self._logger.debug("Received header is Valid")
+        return True
+
+    def _validate_header(
+        self,
+        command
+    ):
+        """
+        Validate the header of the received data.
+
+        This method checks the header, command, and response fields of the
+        received data against expected values.
 
         Parameters
         ----------
         command : int
-            The expected command value to validate against.
+            The expected command value.
+
+        Returns
+        -------
+        bool
+            True if the header is valid, False otherwise.
+
+        Notes
+        -----
+        The method performs the following checks comparing:
+        1. the received header with the expected header constant.
+        2. the received command with the provided command parameter.
+        3. the received response with the expected valid response constant.
+
+        If any of these checks fail, an error is logged with
+        the discrepancy details.
+        """
+        validations = [
+            {
+                "description": "Header",
+                "received": self._preparsed_raw_data.header,
+                "expected": JBDPROTCONST.structure.header,
+                "format": "hex"
+            },
+            {
+                "description": "Command",
+                "received": self._preparsed_raw_data.command,
+                "expected": command,
+                "format": "hex"
+            },
+            {
+                "description": "Response",
+                "received": self._preparsed_raw_data.response,
+                "expected": JBDPROTCONST.structure.valid_response,
+                "format": "hex"
+            }
+        ]
+        return self._validation_engine(validations)
+
+    def _validate_data(self):
+        """
+        Validate the received data stream from the JBD BMS.
+
+        This method performs a series of checks on the
+        preparsed raw data to ensure its integrity and compliance
+        with the JBD protocol. It verifies the length,
+        checksum, and footer of the data stream.
 
         Returns
         -------
@@ -279,9 +497,6 @@ class JbdBMS(SerialPort):
         Notes
         -----
         The method checks the following components of the data stream:
-        - Header: Must match the expected protocol header.
-        - Command: Must match the provided command parameter.
-        - Response: Must be a valid response as defined by the protocol.
         - Length: Must match the actual length of the data.
         - Checksum: Calculated checksum must match the received checksum.
         - Footer: Must match the expected protocol footer.
@@ -321,92 +536,40 @@ class JbdBMS(SerialPort):
             calculated_checksum = (sum(data) + length - 1) ^ 0xffff
             return calculated_checksum
 
-        def print_error(
-            description,
-            received,
-            expected,
-        ):
-            self._logger.warn(
-                f"Data stream error: {description} "
-                f"received: {received} "
-                f"expected: {expected}"
-            )
-        result = True
-        if self._preparsed_raw_data.header != JBDPROTCONST.header:
-            print_error(
-                description="Wrong Header",
-                received=hex(self._preparsed_raw_data.header),
-                expected=hex(JBDPROTCONST.header)
-            )
-            result = False
-
-        if result and (
-            self._preparsed_raw_data.command != command
-        ):
-            print_error(
-                description="Wrong Command",
-                received=hex(self._preparsed_raw_data.command),
-                expected=hex(command)
-            )
-            result = False
-
-        if result and (
-            self._preparsed_raw_data.response != JBDPROTCONST.valid_response
-        ):
-            print_error(
-                description="Wrong Response",
-                received=hex(self._preparsed_raw_data.response),
-                expected=hex(JBDPROTCONST.valid_response)
-            )
-            result = False
-
-        data_length = len(self._preparsed_raw_data.data)
-        if result and (
-            self._preparsed_raw_data.length != data_length
-        ):
-            print_error(
-                description="Wrong Length",
-                received=self._preparsed_raw_data.length,
-                expected=data_length
-            )
-            result = False
-
-        received_checksum = int(
+        received_checksum = int.from_bytes(
             self._preparsed_raw_data.checksum,
             byteorder='big',
             signed=False
         )
-        if result:
-            calculated_checksum = calculate_checksum(
-                data=self._preparsed_raw_data.data,
-                length=self._preparsed_raw_data.length,
-            )
-            if received_checksum != calculated_checksum:
-                print_error(
-                    description="Wrong checksum",
-                    received=hex(received_checksum),
-                    expected=hex(calculated_checksum)
-                )
-            result = False
+        calculated_checksum = calculate_checksum(
+            data=self._preparsed_raw_data.data,
+            length=self._preparsed_raw_data.length,
+        )
 
-        if result and (
-            self._preparsed_raw_data.footer != JBDPROTCONST.footer
-        ):
-            print_error(
-                description="Wrong Footer",
-                received=hex(self._preparsed_raw_data.footer),
-                expected=hex(JBDPROTCONST.footer)
-            )
-            result = False
-
-        if result:
-            self._logger.debug(
-                "Data stream Valid"
-            )
-        return result
+        validations = [
+            {
+                "description": "Length",
+                "received": len(self._preparsed_raw_data.data),
+                "expected": self._preparsed_raw_data.length,
+                "format": "int"
+            },
+            {
+                "description": "Checksum",
+                "received": received_checksum,
+                "expected": calculated_checksum,
+                "format": "hex"
+            },
+            {
+                "description": "Footer",
+                "received": self._preparsed_raw_data.footer,
+                "expected": JBDPROTCONST.structure.footer,
+                "format": "hex"
+            }
+        ]
+        return self._validation_engine(validations)
 
     def _fill_summary(self):
-        data = self._preparsed_raw_data
+        data = self._preparsed_raw_data.data
         # self._battery_data.voltage = round(float(data[0] / 100), 3)
         # self._battery_data.current = round(float(data[1] / 100), 3)
         voltage = data[0:2]
@@ -426,7 +589,10 @@ class JbdBMS(SerialPort):
         self._battery_data.voltage = voltage
         self._battery_data.current = current
 
-        self._battery_data.level = float(data[9])
+        self._battery_data.level = float(data[19])
+        self._battery_data.time_remaining = 10
+        self._battery_data.time_charging = 1
+        self._battery_data.is_charging = False
 
     def get_data(self):
         """

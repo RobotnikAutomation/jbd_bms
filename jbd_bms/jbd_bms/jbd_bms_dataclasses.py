@@ -44,13 +44,48 @@ class ReceivedData:
 
 
 @dataclass(frozen=True)
-class JBDProtocol:
+class JBDProtocolLenght:
+    header: int = 4
+    footer: int = 3
+    total: int = field(init=False)
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            'total',
+            self.header + self.footer
+        )
+
+
+@dataclass(frozen=True)
+class JBDProtocolStructure:
     header: int = 0xDD
     footer: int = 0x77
-    cmd_prefix: int = 0x5A
-    status_cmd: int = 0x03
-    cell_cmd: int = 0x04
     valid_response: int = 0x00
+
+
+@dataclass(frozen=True)
+class JBDProtocolCommands:
+    prefix: int = 0x5A
+    status: int = 0x03
+    cell: int = 0x04
+
+
+@dataclass(frozen=True)
+class JBDProtocol:
+    structure: JBDProtocolStructure = field(
+        default_factory=JBDProtocolStructure
+    )
+    commands: JBDProtocolCommands = field(
+        default_factory=JBDProtocolCommands
+    )
+    length: JBDProtocolLenght = field(
+        default_factory=JBDProtocolLenght
+    )
+
+
+jbd_protocol = JBDProtocol()
+
 
 @dataclass
 class JBDCommand:
@@ -62,13 +97,13 @@ class JBDCommand:
         checksum_bytes = checksum.to_bytes(2, byteorder='big')
         data_length = 0x00
         self.full_command = bytearray([
-            JBDProtocol.header,
-            JBDProtocol.cmd_prefix,
+            jbd_protocol.structure.header,
+            jbd_protocol.commands.prefix,
             self.command,
             data_length,
             checksum_bytes[0],
             checksum_bytes[1],
-            JBDProtocol.footer
+            jbd_protocol.structure.footer
         ])
 
 
