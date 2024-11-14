@@ -24,8 +24,8 @@
   />
 
   <node
-    pkg="jbd"
-    exec="jbd_bms_node"
+    pkg="jbd_bms"
+    exec="jbd_bms"
     name="$(var node_name)"
     namespace="/$(var robot_id)"
     ros_args="--log-level $(var log_level)"
