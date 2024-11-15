@@ -66,7 +66,7 @@ class JBDProtocolStructure:
 
 @dataclass(frozen=True)
 class JBDProtocolCommands:
-    prefix: int = 0x5A
+    prefix: int = 0xA5
     status: int = 0x03
     cell: int = 0x04
 

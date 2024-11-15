@@ -78,8 +78,8 @@ class SerialConfig:
 
     port: str = ""
     baudrate: int = 9600
-    parity: str = serial.PARITY_EVEN
-    bytesize: int = 8
+    parity: str = serial.PARITY_NONE
+    bytesize: int = serial.EIGHTBITS
     timeout: int = 1
     stopbits: str = serial.STOPBITS_ONE
 
@@ -208,7 +208,7 @@ class SerialPort():
                     parity=self._serial.config.parity,
                     bytesize=self._serial.config.bytesize,
                     timeout=self._serial.config.timeout,
-                    stopbits=self._serial.config.stopbits
+                    stopbits=self._serial.config.stopbits,
                 )
             except serial.SerialException as var:
                 self._handle_serial_exception(var)

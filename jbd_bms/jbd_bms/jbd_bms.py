@@ -30,11 +30,9 @@
 # @maintanier Guillem Gari  <ggari@robotnik.es> Robotnik Automation S.L.
 
 import time
+
 import serial
 
-# Insert here general imports:
-# from serial import SerialException
-# from binascii import hexlify, unhexlify
 from .serial import SerialPort
 from .utils import DefaultLogger
 from .jbd_bms_dataclasses import JBDProtocol, JBDCommand
@@ -94,10 +92,26 @@ class JbdBMS(SerialPort):
         if not self._read_serial_data(command):
             self._logger.info("No data received")
             return False
-        if not self._process_serial_data(command):
+        if not self._process_serial_data():
             self._logger.info("Error parsing data")
             return False
         return True
+
+    def _print_hex(
+        self,
+        data,
+        message
+    ):
+        formatted_bytes = [f'0x{byte:02X}' for byte in data]
+        formatted_data = ' '.join(formatted_bytes)
+        self._logger.debug(f"{message} RAW DATA: {formatted_data}")
+
+    def _clear_buffer(self):
+        self._serial.data = bytearray()
+        self._logger.debug(
+            "clearer buffer"
+            f" buffer size: {len(self._serial.data)}"
+        )
 
     def _send_command(
         self,
@@ -121,11 +135,13 @@ class JbdBMS(SerialPort):
             )
             return False
         try:
+            self._clear_buffer()
             self._serial.device.write(command)
             self._serial.device.flush()
-            formatted_bytes = [f'0x{byte:02X}' for byte in command]
-            formatted_data = ' '.join(formatted_bytes)
-            self._logger.debug(f'SENT RAW DATA: {formatted_data}')
+            self._print_hex(
+                data=command,
+                message="SENT"
+            )
             self._serial.processing = True
             return True
         except serial.SerialException as var:
@@ -148,67 +164,73 @@ class JbdBMS(SerialPort):
         """
         # Set a total timeout for the entire operation
 
-        total_timeout = self._serial.device.timeout
-        start_time = time.time()
-        self._serial.ready = False
-        serial_data = bytearray()
-
-        def read_serial_data(length):
-            while len(self._serial.data) < length:
-                if time.time() - start_time > total_timeout:
-                    self._logger.debug(
-                        "Total timeout exceeded. "
-                        f"Received only {len(self._serial.data)} bytes."
-                    )
-                    break
-                chunk = self._serial.device.read(
-                    length - len(self._serial.data)
+        def read_chunk():
+            start_time = time.time()
+            if self._serial.device.in_waiting == 0:
+                return False
+            if time.time() - start_time > total_timeout:
+                self._logger.debug(
+                    "Total timeout exceeded. "
+                    f"Received only {len(self._serial.data)} bytes."
                 )
-                if chunk:
-                    # Append the received bytes to our buffer
-                    self._serial.data.extend(chunk)
-                    self._logger.debug(
-                        f"Received {len(chunk)} bytes. "
-                        f"Total: {len(self._serial.data)} bytes."
-                    )
+                return False
+            chunk = self._serial.device.read(
+                self._serial.device.in_waiting
+            )
+            self._print_hex(chunk, "CHUCK")
+            if chunk:
+                # Append the received bytes to our buffer
+                self._serial.data.extend(chunk)
+                self._logger.debug(
+                    f"Received {len(chunk)} bytes. "
+                    f"Total: {len(self._serial.data)} bytes."
+                )
+            return True
 
+        def check_data_length(length):
             if len(self._serial.data) < length:
                 self._logger.debug(
                     "Incomplete data. "
-                    f"Received {len(self._serial.data)} bytes."
+                    f"Received: {len(self._serial.data)} bytes."
+                    f"Expected: {length} bytes."
                 )
                 self._print_hex(
                     data=self._serial.data,
                     message="RECEIVED"
                 )
-                self.clear_buffer()
+                self._clear_buffer()
                 self._serial.processing = False
                 return False
             return True
 
-        try:
-            # process header
+        def read_serial_data(lenght):
+            while len(self._serial.data) < lenght:
+                if not read_chunk():
+                    break
+                time.sleep(0.001)
+            if not check_data_length(lenght):
+                return False
+            return True
+
+        def process_header():
             header_length = JBDPROTCONST.length.header
             if not read_serial_data(header_length):
                 return False
-            header = serial_data
-            # REMOVE IT!!! it's for debug
-            valid = bytearray(
-                [0xDD, 0x03, 0x00, 0x1B]
-            )
-            # REMOVE IT!!! it's for debug
-            header[0:4] = valid
+            header = self._serial.data
             self._print_hex(
                 data=header,
                 message="RECEIVED HEADER"
             )
             self._preparse_rawdata_header(header)
-            self.clear_buffer()
             if not self._validate_header(command):
                 self._serial.processing = False
                 return False
-            data_length = self._preparsed_raw_data.length
+            return True
+
+        def process_data():
             footer = JBDPROTCONST.length.footer
+            data_length = self._preparsed_raw_data.length
+            data_length += footer
             if not read_serial_data(data_length + footer):
                 return False
 
@@ -216,49 +238,28 @@ class JbdBMS(SerialPort):
                 data=self._serial.data,
                 message="RECEIVED"
             )
-            # REMOVE IT!!! it's for debug
-            valid = bytearray([
-                0x17, 0x00, 0x00, 0x00, 0x02, 0xD0, 0x03, 0xE8,
-                0x00, 0x00, 0x20, 0x78, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x10, 0x48, 0x03, 0x0F, 0x02, 0x0B,
-                0x76, 0x0B, 0x82,
-                0xFB, 0xFF, 0x77
-            ])
-            # SWAP IT!!! it's for debug
-            # if not self._preparse_rawdata(self._serial.data):
-            if not self._preparse_rawdata(valid):
-                return False
-            self._print_hex(
-                data=self._serial.data,
-                message="REAL"
-            )
-            # REMOVE IT!!! it's for debug
-            self._print_hex(
-                data=valid,
-                message="FAKE"
-            )
-            self._serial.ready = True
+            parse_result = self._preparse_rawdata(self._serial.data)
+            validate_result = self._validate_data()
+            self._clear_buffer()
             self._serial.processing = False
+            if parse_result and validate_result:
+                self._serial.ready = True
+                return True
+            return False
 
+        total_timeout = self._serial.device.timeout
+        self._serial.ready = False
+        try:
+            if not process_header():
+                return False
+            if not process_data():
+                return False
             return True
         except serial.SerialException as var:
             self._handle_serial_exception(var)
             return False
 
-    def _print_hex(self, data, message):
-        formatted_bytes = [f'0x{byte:02X}' for byte in data]
-        formatted_data = ' '.join(formatted_bytes)
-        self._logger.debug(f"{message} RAW DATA: {formatted_data}")
-
-    def clear_buffer(self):
-        # clear the buffer
-        self._serial.data = bytearray()
-        self._logger.debug(
-            "clearer buffer"
-            f" buffer size: {len(self._serial.data)}"
-        )
-
-    def _process_serial_data(self, command):
+    def _process_serial_data(self):
         """
         Process the received serial data.
 
@@ -275,8 +276,6 @@ class JbdBMS(SerialPort):
         self._serial.ready = False
         # if not self._preparse_rawdata(self._serial.data):
         #     return False
-        if not self._validate_data():
-            return False
         self._fill_summary()
         return True
 
@@ -309,19 +308,21 @@ class JbdBMS(SerialPort):
         - Index 1: Command
         - Index 2: Response
         - Index 3: Length (N)
-        - Index 4 to N-3: Data payload
-        - Index N-3 to N-1: Checksum (2 bytes)
-        - Index N: Footer
 
         The parsed data is stored in the self._preparsed_raw_data object,
         which is assumed to have attributes corresponding to each component.
 
         This method updates the internal _preparsed_raw_data object.
         """
-        self._preparsed_raw_data.header = raw_data[0]
-        self._preparsed_raw_data.command = raw_data[1]
-        self._preparsed_raw_data.response = raw_data[2]
-        self._preparsed_raw_data.length = raw_data[3]
+        attributes = [
+            'header',
+            'command',
+            'response',
+            'length',
+        ]
+        for index, attr in enumerate(attributes):
+            value = raw_data[index]
+            setattr(self._preparsed_raw_data, attr, value)
 
     def _preparse_rawdata(
         self,
@@ -368,11 +369,19 @@ class JbdBMS(SerialPort):
                 f" Received: {len(raw_data)}"
             )
             return False
-        self._preparsed_raw_data.data = raw_data[0:-3]
-        self._preparsed_raw_data.checksum = raw_data[-3:-1]
-        self._preparsed_raw_data.footer = raw_data[-1]
+        length = self._preparsed_raw_data.length
+        length += JBDPROTCONST.length.header
+        footer_pos = length + JBDPROTCONST.length.footer - 1
+        self._preparsed_raw_data.data = raw_data[4:length]
+        self._print_hex(
+            data=self._preparsed_raw_data.data,
+            message="PURE DATA"
+        )
+        self._preparsed_raw_data.checksum = raw_data[
+            length:length + 2
+        ]
+        self._preparsed_raw_data.footer = raw_data[footer_pos]
         return True
-
 
     def _validation_engine(self, validations):
         """
@@ -578,12 +587,12 @@ class JbdBMS(SerialPort):
             byteorder='big',
             signed=False
         )
-        voltage = round(float(voltage / 100), 3)
+        voltage = round(float(voltage / 100), 2)
         current = data[2:4]
         current = int.from_bytes(
             current,
             byteorder='big',
-            signed=False
+            signed=True
         )
         current = round(float(current / 100), 3)
         self._battery_data.voltage = voltage
@@ -624,7 +633,7 @@ class JbdBMS(SerialPort):
     #     # Get battery values
 
     #     try:
-    #         self.writeToSerialDevice("DDA50300FFFD77")
+    #         self.writeToSerialDevice("DDA50300FFFD77") 0xDD 0xA5 0x03 0x00 0xFF 0xFD 0x77
     #         rospy.sleep(0.1)
     #         line_read = str(self.readFromSerialDevice())
     #         hex_data = line_read.split("dd03001b")[1]
