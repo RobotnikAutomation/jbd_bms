@@ -70,6 +70,7 @@ class JbdBMS(SerialPort):
         self._battery_data = BatteryData()
         self._preparsed_raw_data = ReceivedData()
         self._commands = COMMANDS
+        self._charge_time = 0
 
     def retrieve_data(self):
         """
@@ -595,13 +596,41 @@ class JbdBMS(SerialPort):
             signed=True
         )
         current = round(float(current / 100), 3)
+        capacity = data[4:6]
+        capacity = int.from_bytes(
+            capacity,
+            byteorder='big',
+            signed=False
+        )
+        capacity = round(float(capacity / 100), 2)
+        if current < 0.0:
+            remaining_time = abs((capacity / current) * 60)
+            remaining_time = round(remaining_time, 0)
+            remaining_time = int(remaining_time)
+        else:
+            remaining_time = 0
         self._battery_data.voltage = voltage
         self._battery_data.current = current
-
+        self._battery_data.time_remaining = remaining_time
         self._battery_data.level = float(data[19])
-        self._battery_data.time_remaining = 10
-        self._battery_data.time_charging = 1
-        self._battery_data.is_charging = False
+        prev_charging = self._battery_data.is_charging
+
+        if current > 0.0:
+            charging = True
+            if prev_charging != charging:
+                self._battery_data.time_charging = 0
+                self._charge_time = time.time()
+            time_charging = time.time() - self._charge_time
+            time_charging = time_charging / 60
+            time_charging = round(time_charging, 0)
+            time_charging = int(time_charging)
+
+        else:
+            charging = False
+            time_charging = 0
+        self._battery_data.is_charging = charging
+        self._battery_data.time_charging = time_charging
+
 
     def get_data(self):
         """
