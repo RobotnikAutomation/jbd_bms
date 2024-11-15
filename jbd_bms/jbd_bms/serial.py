@@ -155,6 +155,7 @@ class SerialPort():
     -----
     This class is designed for general serial port communication and can be
     used with various devices that communicate over a serial interface.
+
     """
 
     def __init__(

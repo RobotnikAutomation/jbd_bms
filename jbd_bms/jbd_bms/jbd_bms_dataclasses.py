@@ -29,11 +29,53 @@
 #
 # @maintanier Guillem Gari  <ggari@robotnik.es> Robotnik Automation S.L.
 
+"""
+JBD BMS Protocol and Data Structures.
+
+This module defines data structures and protocol specifications for
+communicating with JBD Battery Management Systems (BMS). It includes classes
+for received data, protocol structure, commands, and battery data.
+
+Classes:
+    ReceivedData: Represents data received from the BMS.
+    JBDProtocolLenght: Defines protocol message length specifications.
+    JBDProtocolStructure: Specifies protocol structural elements.
+    JBDProtocolCommands: Defines command codes for the JBD protocol.
+    JBDProtocol: Combines protocol specifications.
+    JBDCommand: Represents a command to be sent to the BMS.
+    BatteryData: Encapsulates battery state information.
+
+Constants:
+    jbd_protocol: An instance of JBDProtocol with default settings.
+"""
+
 from dataclasses import dataclass, field
 
 
 @dataclass
 class ReceivedData:
+    """
+    Represents data received from the BMS.
+
+    Attributes
+    ----------
+    header : int
+        The header byte of the received message. Default is 0x00.
+    command : int
+        The command byte of the received message. Default is 0x00.
+    response : int
+        The response byte of the received message. Default is 0x00.
+    length : int
+        The length byte of the received message. Default is 0x00.
+    data : list or None
+        The data payload of the received message. Default is None.
+    checksum : list or None
+        The checksum bytes of the received message. Default is None.
+    footer : int
+        The footer byte of the received message. Default is 0x00.
+
+    """
+
     header: int = 0x00
     command: int = 0x00
     response: int = 0x00
@@ -45,11 +87,26 @@ class ReceivedData:
 
 @dataclass(frozen=True)
 class JBDProtocolLenght:
+    """
+    Specifies protocol structural elements.
+
+    Attributes
+    ----------
+    header : int
+        The header byte value for the protocol. Default is 0xDD.
+    footer : int
+        The footer byte value for the protocol. Default is 0x77.
+    valid_response : int
+        The byte value indicating a valid response. Default is 0x00.
+
+    """
+
     header: int = 4
     footer: int = 3
     total: int = field(init=False)
 
     def __post_init__(self):
+        """Calculate the total length after initialization."""
         object.__setattr__(
             self,
             'total',
@@ -59,6 +116,20 @@ class JBDProtocolLenght:
 
 @dataclass(frozen=True)
 class JBDProtocolStructure:
+    """
+    Specifies protocol structural elements.
+
+    Attributes
+    ----------
+    header : int
+        The header byte value for the protocol. Default is 0xDD.
+    footer : int
+        The footer byte value for the protocol. Default is 0x77.
+    valid_response : int
+        The byte value indicating a valid response. Default is 0x00.
+
+    """
+
     header: int = 0xDD
     footer: int = 0x77
     valid_response: int = 0x00
@@ -66,6 +137,20 @@ class JBDProtocolStructure:
 
 @dataclass(frozen=True)
 class JBDProtocolCommands:
+    """
+    Defines command codes for the JBD protocol.
+
+    Attributes
+    ----------
+    prefix : int
+        The prefix byte for commands. Default is 0xA5.
+    status : int
+        The command code for requesting status. Default is 0x03.
+    cell : int
+        The command code for cell-related operations. Default is 0x04.
+
+    """
+
     prefix: int = 0xA5
     status: int = 0x03
     cell: int = 0x04
@@ -73,6 +158,20 @@ class JBDProtocolCommands:
 
 @dataclass(frozen=True)
 class JBDProtocol:
+    """
+    Combines protocol specifications.
+
+    Attributes
+    ----------
+    structure : JBDProtocolStructure
+        The structural elements of the protocol.
+    commands : JBDProtocolCommands
+        The command codes used in the protocol.
+    length : JBDProtocolLenght
+        The length specifications for protocol messages.
+
+    """
+
     structure: JBDProtocolStructure = field(
         default_factory=JBDProtocolStructure
     )
@@ -89,6 +188,24 @@ jbd_protocol = JBDProtocol()
 
 @dataclass
 class JBDCommand:
+    """
+    Represents a command to be sent to the BMS.
+
+    Attributes
+    ----------
+    command : int
+        The command code to be sent.
+    full_command : bytearray
+        The complete command message including header, command, checksum,
+        and footer.
+
+    Methods
+    -------
+    __post_init__()
+        Constructs the full command message after initialization.
+
+    """
+
     command: int
     full_command: bytearray = field(default_factory=bytearray)
 

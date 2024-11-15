@@ -59,6 +59,7 @@ Notes
     Proper setup of the ROS2 environment is required before running this node.
 
 """
+
 import sys
 import rclpy
 from .jbd_bms_ros import JbdBMSROS2

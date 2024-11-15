@@ -93,6 +93,7 @@ class JbdBMSROS2(Node):
         Retrieve and process data from the BMS.
     ros_publish()
         Publish battery status to ROS2 topics.
+
     """
 
     def __init__(self):
@@ -122,7 +123,9 @@ class JbdBMSROS2(Node):
         ------
         AssertionError
             If the parameters are not of the expected type.
+
         """
+
         def declare_and_get_param(
             param,
             default_value,
@@ -155,6 +158,7 @@ class JbdBMSROS2(Node):
             ------
             AssertionError
                 If the parameter is not of the expected type.
+
             """
             self.declare_parameter(name=param, value=default_value)
             value = self.get_parameter(param).value
@@ -230,6 +234,7 @@ class JbdBMSROS2(Node):
         -------
         bool
             True if setup is successful.
+
         """
         self.ros_read_params()
         self.ros_setup()
@@ -249,11 +254,12 @@ class JbdBMSROS2(Node):
         bool
             True if data retrieval and processing are successful,
             False otherwise.
+
         """
         if not self._jbd.retrieve_data():
             return False
         summary_data = self._jbd.get_data()
-        print(summary_data)
+        self.get_logger().debug(str((summary_data)))
         self._battery_data = copy_dataclass_to_ros_message(
             summary_data,
             self._battery_data

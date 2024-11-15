@@ -37,8 +37,6 @@ a LogLevel enumeration for specifying log severity levels.
 
 Functions
 ---------
-    twos_complement(hexval): Convert a 16-bit two's complement
-                             hexadecimal string to a signed integer.
     copy_dataclass_to_ros_message(source, destination): Copy matching fields
          from a dataclass instance to a ROS 2 message.
 
@@ -83,30 +81,12 @@ def copy_dataclass_to_ros_message(source, destination):
     This function iterates through the fields of the source dataclass
     and copies the values of matching fields to the destination ROS 2 message.
     Fields that don't exist in the destination message are skipped.
+
     """
     for field in fields(source):
         if hasattr(destination, field.name):
             setattr(destination, field.name, getattr(source, field.name))
     return destination
-
-
-def twos_complement(hexval):
-    """
-    Convert a 16-bit two's complement hexadecimal string to a signed integer.
-
-    Parameters
-    ----------
-    hexval : str
-        A string representing a 16-bit hexadecimal number.
-
-    Returns
-    -------
-    int
-        The signed integer representation of the input.
-    """
-    val = int(hexval, 16)
-    mask = 0x8000  # Precomputed bitmask for the sign bit (1 << 15)
-    return (val & ~mask) - (val & mask)
 
 
 class LogLevel(IntEnum):

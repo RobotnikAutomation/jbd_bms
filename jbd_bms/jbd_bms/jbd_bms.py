@@ -28,8 +28,40 @@
 
 #
 # @maintanier Guillem Gari  <ggari@robotnik.es> Robotnik Automation S.L.
+"""
+JBD BMS Communication Module.
+
+This module provides functionality for communicating with JBD Battery
+Management Systems (BMS) over a serial connection. It includes classes and
+methods for sending commands, receiving and parsing data, and managing the
+battery state.
+
+Classes
+-------
+JbdBMS : SerialPort
+    Main class for interacting with the JBD BMS.
+
+Functions
+---------
+None
+
+Constants
+---------
+JBDPROTCONST : JBDProtocol
+    Constants for JBD protocol.
+COMMANDS : dict
+    Predefined commands for BMS communication.
+
+Notes
+-----
+This module relies on the serial communication protocol defined by JBD BMS.
+It handles command sending, data reception, parsing, and validation.
+
+
+"""
 
 import time
+from dataclasses import asdict
 
 import serial
 
@@ -98,16 +130,49 @@ class JbdBMS(SerialPort):
             return False
         return True
 
+    def get_data(self):
+        """
+        Return the summary data.
+
+        Returns
+        -------
+        Class
+            Return the summary data.
+
+        """
+        return self._battery_data
+
     def _print_hex(
         self,
         data,
         message
     ):
+        """
+        Print hexadecimal representation of data with a message.
+
+        This method formats the input data as a string of hexadecimal values
+        and logs it using the debug level of the logger.
+
+        Parameters
+        ----------
+        data : bytes or bytearray
+            The data to be printed in hexadecimal format.
+        message : str
+            A message to prepend to the hexadecimal data in the log.
+
+        """
         formatted_bytes = [f'0x{byte:02X}' for byte in data]
         formatted_data = ' '.join(formatted_bytes)
         self._logger.debug(f"{message} RAW DATA: {formatted_data}")
 
     def _clear_buffer(self):
+        """
+        Clear the internal data buffer and log the action.
+
+        This method resets the internal data buffer to an empty bytearray
+        and logs a debug message indicating that the buffer has been cleared,
+        along with the new buffer size.
+        """
         self._serial.data = bytearray()
         self._logger.debug(
             "clearer buffer"
@@ -128,7 +193,6 @@ class JbdBMS(SerialPort):
             In any failure False.
 
         """
-
         self._logger.debug("Sending command")
         if self._serial.processing:
             self._logger.debug(
@@ -156,16 +220,46 @@ class JbdBMS(SerialPort):
         """
         Read data from the serial port.
 
+        This method reads and processes data from the serial port, including
+        header and payload data.
+
+        Parameters
+        ----------
+        command : int
+            The command code sent to the device.
+
         Returns
         -------
         bool
-            True if the data could  be read
-            False if the data could not be readed
+            True if the data was successfully read and processed,
+            False otherwise.
+
+        Raises
+        ------
+        serial.SerialException
+            If there's an issue with the serial communication.
 
         """
-        # Set a total timeout for the entire operation
 
         def read_chunk():
+            """
+            Read a chunk of data from the serial port.
+
+            This function reads available data from the serial port and
+            appends it to the internal buffer.
+
+            Returns
+            -------
+            bool
+                True if data was read successfully, False if a timeout occurred
+                or no data was available.
+
+            Notes
+            -----
+            This function updates the internal data buffer and logs debug
+            information.
+
+            """
             start_time = time.time()
             if self._serial.device.in_waiting == 0:
                 return False
@@ -189,6 +283,25 @@ class JbdBMS(SerialPort):
             return True
 
         def check_data_length(length):
+            """
+            Check if the received data meets the expected length.
+
+            Parameters
+            ----------
+            length : int
+                The expected length of the data.
+
+            Returns
+            -------
+            bool
+                True if the data length is sufficient, False otherwise.
+
+            Notes
+            -----
+            If the data is incomplete, this function logs debug information,
+            prints the received data, and clears the buffer.
+
+            """
             if len(self._serial.data) < length:
                 self._logger.debug(
                     "Incomplete data. "
@@ -204,18 +317,51 @@ class JbdBMS(SerialPort):
                 return False
             return True
 
-        def read_serial_data(lenght):
-            while len(self._serial.data) < lenght:
+        def read_serial_data_amount(length):
+            """
+            Read a specific amount of data from the serial port.
+
+            This function reads data until the specified length is reached or
+            a timeout occurs.
+
+            Parameters
+            ----------
+            length : int
+                The number of bytes to read.
+
+            Returns
+            -------
+            bool
+                True if the required amount of data was read, False otherwise.
+
+            """
+            while len(self._serial.data) < length:
                 if not read_chunk():
                     break
                 time.sleep(0.001)
-            if not check_data_length(lenght):
+            if not check_data_length(length):
                 return False
             return True
 
         def process_header():
+            """
+            Process the header of the received data.
+
+            This function reads and validates the header of the incoming data.
+
+            Returns
+            -------
+            bool
+                True if the header was successfully processed and validated,
+                False otherwise.
+
+            Notes
+            -----
+            This function updates internal state based on the received header.
+
+            """
             header_length = JBDPROTCONST.length.header
-            if not read_serial_data(header_length):
+            if not read_serial_data_amount(header_length):
                 return False
             header = self._serial.data
             self._print_hex(
@@ -229,10 +375,28 @@ class JbdBMS(SerialPort):
             return True
 
         def process_data():
+            """
+            Process the payload data of the received message.
+
+            This function reads the payload data, validates it, and updates
+            the internal state accordingly.
+
+            Returns
+            -------
+            bool
+                True if the data was successfully processed and validated,
+                False otherwise.
+
+            Notes
+            -----
+            This function performs data parsing, validation, and updates the
+            internal ready state.
+
+            """
             footer = JBDPROTCONST.length.footer
             data_length = self._preparsed_raw_data.length
             data_length += footer
-            if not read_serial_data(data_length + footer):
+            if not read_serial_data_amount(data_length + footer):
                 return False
 
             self._print_hex(
@@ -271,7 +435,6 @@ class JbdBMS(SerialPort):
             False if the data could not be processed
 
         """
-
         if not self._serial.ready:
             return False
         self._serial.ready = False
@@ -314,6 +477,7 @@ class JbdBMS(SerialPort):
         which is assumed to have attributes corresponding to each component.
 
         This method updates the internal _preparsed_raw_data object.
+
         """
         attributes = [
             'header',
@@ -334,8 +498,8 @@ class JbdBMS(SerialPort):
 
         This method parses the raw data received from the BMS and assigns
         each component to the corresponding attribute of the
-        _preparsed_raw_data object. It extracts the header, command, response,
-        length, data, checksum, and footer from the raw data array.
+        _preparsed_raw_data object. It extracts the
+        data, checksum, and footer from the raw data array.
 
         Parameters
         ----------
@@ -362,6 +526,7 @@ class JbdBMS(SerialPort):
         which is assumed to have attributes corresponding to each component.
 
         This method updates the internal _preparsed_raw_data object.
+
         """
         if len(raw_data) < JBDPROTCONST.length.total:
             self._logger.warn(
@@ -411,6 +576,7 @@ class JbdBMS(SerialPort):
         For each failed validation, an error is logged with
         the discrepancy details.
         The method stops at the first failed validation.
+
         """
         for validation in validations:
             self._logger.debug(
@@ -467,6 +633,7 @@ class JbdBMS(SerialPort):
 
         If any of these checks fail, an error is logged with
         the discrepancy details.
+
         """
         validations = [
             {
@@ -513,48 +680,21 @@ class JbdBMS(SerialPort):
 
         If any check fails, an error message is logged,
         and the method returns False.
+
+        Notes
+        -----
+        The XOR operation with 0xffff
+        is used to invert all bits of the result checksum.
+
         """
-        def calculate_checksum(
-            length,
-            data
-        ):
-            """
-            Calculate the checksum for the given data.
-
-            This function computes a checksum based
-            on the sum of the data bytes,
-            the length of the data, and a bitwise XOR operation.
-
-            Parameters
-            ----------
-            length : int
-                The length of the data.
-            data : list or bytes
-                The data for which to calculate the checksum.
-
-            Returns
-            -------
-            int
-                The calculated checksum.
-
-            Notes
-            -----
-            The XOR operation with 0xffff
-            is used to invert all bits of the result.
-
-            """
-            calculated_checksum = (sum(data) + length - 1) ^ 0xffff
-            return calculated_checksum
-
         received_checksum = int.from_bytes(
             self._preparsed_raw_data.checksum,
             byteorder='big',
             signed=False
         )
-        calculated_checksum = calculate_checksum(
-            data=self._preparsed_raw_data.data,
-            length=self._preparsed_raw_data.length,
-        )
+        data = self._preparsed_raw_data.data
+        length = self._preparsed_raw_data.length
+        calculated_checksum = (sum(data) + length - 1) ^ 0xffff
 
         validations = [
             {
@@ -579,9 +719,30 @@ class JbdBMS(SerialPort):
         return self._validation_engine(validations)
 
     def _fill_summary(self):
+        """
+        Process raw data and update battery information.
+
+        This method extracts and calculates various battery parameters from
+        the raw data stored in `self._preparsed_raw_data.data`. It updates
+        the `self._battery_data` object with the processed information.
+
+        The following battery parameters are updated:
+        - Voltage
+        - Current
+        - Remaining time (if discharging)
+        - Battery level
+        - Charging status
+        - Charging time (if charging)
+
+        Notes
+        -----
+        - Voltage and current are converted from raw data and rounded.
+        - Remaining time is calculated only when discharging (current < 0).
+        - Charging status is determined by the current (> 0 means charging).
+        - Charging time is calculated and updated only when charging.
+
+        """
         data = self._preparsed_raw_data.data
-        # self._battery_data.voltage = round(float(data[0] / 100), 3)
-        # self._battery_data.current = round(float(data[1] / 100), 3)
         voltage = data[0:2]
         voltage = int.from_bytes(
             voltage,
@@ -630,73 +791,5 @@ class JbdBMS(SerialPort):
             time_charging = 0
         self._battery_data.is_charging = charging
         self._battery_data.time_charging = time_charging
-
-
-    def get_data(self):
-        """
-        Return the summary data.
-
-        Returns
-        -------
-        Class
-            Return the summary data.
-
-        """
-        return self._battery_data
-
-
-#############################
-
-    # def ready_state(self):
-    #     """Actions performed in ready state"""
-
-    #     # Publish topic with status
-
-    #     status_stamped = StringStamped()
-    #     status_stamped.header.stamp = rospy.Time.now()
-    #     status_stamped.string = self.status.data
-
-    #     self.status_pub.publish(self.status)
-    #     self.status_stamped_pub.publish(status_stamped)
-
-    #     # Get battery values
-
-    #     try:
-    #         self.writeToSerialDevice("DDA50300FFFD77") 0xDD 0xA5 0x03 0x00 0xFF 0xFD 0x77
-    #         rospy.sleep(0.1)
-    #         line_read = str(self.readFromSerialDevice())
-    #         hex_data = line_read.split("dd03001b")[1]
-    #         self.voltage = self.twos_complement(hex_data[0:4]) / 100.0
-    #         self.current = self.twos_complement(hex_data[4:8]) / 100.0
-    #         self.level = self.twos_complement(hex_data[38:40])
-    #     except Exception as e:
-    #         rospy.logerr('%s::readyState: error reading BMS values: %s', rospy.get_name(), e)
-
-    #     # Publish topic with data
-
-    #     data = BatteryStatus()
-    #     data.current = self.current
-    #     data.voltage = self.voltage
-    #     data.level = self.level
-    #     if (self.current > 0.0):
-    #         data.is_charging = True
-    #     self.data_pub.publish(data)
-
-    #     return RComponent.ready_state(self)
-
-
-
-
-    # def writeToSerialDevice(self, data):
-    #     data_write = unhexlify(data)
-    #     bytes_written = self.serial_device.write(data_write)
-    #     return bytes_written
-
-    # def readFromSerialDevice(self):
-    #     try:
-    #         data_read = self.serial_device.read_all()
-    #         return hexlify(data_read)
-    #     except SerialException as e:
-    #         rospy.logwarn(e)
-    #         return
-
+        for attr, value in asdict(self._battery_data).items():
+            self._logger.debug(f"{attr}: {value}")
