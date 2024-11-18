@@ -1,0 +1,136 @@
+---
+name: Container image creation
+# author: "Guillem Gari <ggari@robotnik.es>"
+# description: |
+#   This workflow builds and pushes a container image to a private registry,
+#   then performs a simple usage test. It's triggered on pushes to ros2*,
+#   branches, specific tags, pull requests, or manually.
+
+#   Key features:
+#   - Runs on self-hosted Kubernetes runners
+#   - Builds and pushes Docker image on changes in monitored paths
+#   - Performs a non-crash test using the built image
+#   - Supports multiple ROS distributions (Humble, Iron, Rolling, etc.)
+#   - Uses dynamic versioning based on Git context
+
+on:
+  push:
+    branches:
+      - ros2*
+    tags:
+      - '(humble|iron|rolling|melodic|noetic|jazzy)-[0-9]+.[0-9]+.[0-9]+(-rc[0-9]+)?'
+      - '[0-9]+.[0-9]+.[0-9]+(-rc[0-9]+)?'
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - ros2*
+  workflow_dispatch:
+
+env:
+  MONITORED_PATHS: >-
+    jbd_bms
+    setup-container
+    setup-container.yaml
+
+jobs:
+  build:
+    name: Build and upload image
+    runs-on:
+      - self-hosted
+      - internal-robotnik
+      - linux
+      - kubernetes
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/check-changes
+        id: check_changes
+        with:
+          monitored_paths: ${{ env.MONITORED_PATHS }}
+      - uses: ./.github/actions/set-version
+        id: set_version
+        with:
+          github_ref: ${{ github.ref }}
+          github_event_name: ${{ github.event_name }}
+          github_head_ref: ${{ github.head_ref }}
+          github_base_ref: ${{ github.base_ref }}
+          github_sha: ${{ github.sha }}
+      - name: Login to Robotnik Registry
+        if: steps.check_changes.outputs.has_changes == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: registry.robotnik.ws
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - name: Configure docker files
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          yq e '.images.version = "${{ steps.set_version.outputs.version }}"' -i setup-container.yaml
+          setup-container/scripts/setup.sh
+      - name: Build image and push
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          cd container/cd
+          docker compose build --push
+
+  serial-void-non-crash-test:
+    name: Void serial non crash test
+    needs: [build]
+    runs-on:
+      - self-hosted
+      - internal-robotnik
+      - linux
+      - kubernetes
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/check-changes
+        id: check_changes
+        with:
+          monitored_paths: ${{ env.MONITORED_PATHS }}
+      - uses: ./.github/actions/set-version
+        id: set_version
+        with:
+          github_ref: ${{ github.ref }}
+          github_event_name: ${{ github.event_name }}
+          github_head_ref: ${{ github.head_ref }}
+          github_base_ref: ${{ github.base_ref }}
+          github_sha: ${{ github.sha }}
+      - name: Login to Robotnik Registry
+        if: steps.check_changes.outputs.has_changes == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: registry.robotnik.ws
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - name: Configure docker files
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          yq e '.images.version = "${{ steps.set_version.outputs.version }}"' -i setup-container.yaml
+          yq e '.images.sites.local = "robotnik"' -i setup-container.yaml
+          setup-container/scripts/setup.sh
+      - name: Pull image
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          cd container
+          cd debug
+          docker compose pull
+      - name: Void run for 15 seconds
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          cd container
+          cd debug
+          docker compose up -d
+          sleep 1
+          docker compose exec bms sudo apt update
+          docker compose exec bms sudo apt install -y socat
+          docker compose exec --detach  bms /usr/bin/socat -d -d pty,link=/tmp/vserial1,raw,echo=0 pty,link=/tmp/vserial2,raw,echo=0
+          timeout 15 docker compose exec bms /bin/bash -c 'ROBOT_BMS_PORT=/tmp/vserial1 STARTUP_TYPE=launch ros_launcher.sh' || exit_code=$?
+          if [[ $exit_code -eq 124 ]]
+          then
+            echo "No crash, test passed"
+            exit 0
+          fi
+          exit 1
