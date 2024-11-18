@@ -105,7 +105,7 @@ ARG alpine_version="use-args"
 ARG alpine_mirror="use-args"
 
 
-FROM  ${base_image}:${ros_distro}-base-${image_base_version} as base
+FROM  ${base_image}:${ros_distro}-base-${image_base_version} AS base
 LABEL maintainer="Guillem Gari <ggari@robotnik.es>" \
       org.opencontainers.image.title="{{ .Values.images.name }}" \
       org.opencontainers.image.version="${version}" \
@@ -115,7 +115,7 @@ LABEL maintainer="Guillem Gari <ggari@robotnik.es>" \
       org.opencontainers.image.licenses="BSD-3-Clause" \
       org.opencontainers.image.authors="Guillem Gari <ggari@robotnik.es>"
 
-FROM ${base_image}:${ros_distro}-builder-${image_base_version} as builder-base
+FROM ${base_image}:${ros_distro}-builder-${image_base_version} AS builder-base
 
 USER root
 
@@ -144,13 +144,13 @@ USER $USER_NAME
 
 {{ include "pip.install" . }}
 
-FROM builder-base as test
+FROM builder-base AS test
 
 RUN compile_workspace.sh
 
 RUN test_workspace.sh
 
-FROM builder-base as builder
+FROM builder-base AS builder
 
 RUN generate_debs.sh
 

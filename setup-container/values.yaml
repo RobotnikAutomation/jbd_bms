@@ -118,7 +118,7 @@ builder:
     - name: ROBOT_BMS_PORT
       value: /dev/ttyUSB_BMS
     - name: DESIRED_FREQ
-      value: 2.0
+      value: "2.0"
     - name: LOG_LEVEL
       value: INFO
 

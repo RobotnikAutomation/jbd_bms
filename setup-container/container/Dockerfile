@@ -40,7 +40,7 @@ ARG image_tag="use-args"
 ARG image_mirror="use-args"
 
 
-FROM  ${image_mirror}alpine:${image_tag} as base
+FROM  ${image_mirror}alpine:${image_tag} AS base
 LABEL maintainer="Guillem Gari <ggari@robotnik.es>" \
       org.opencontainers.image.title="setup-container" \
       org.opencontainers.image.version="${version}" \
@@ -50,7 +50,7 @@ LABEL maintainer="Guillem Gari <ggari@robotnik.es>" \
       org.opencontainers.image.licenses="BSD-3-Clause" \
       org.opencontainers.image.authors="Guillem Gari <ggari@robotnik.es>"
 
-FROM  base as downloader
+FROM  base AS downloader
 
 # Install bash
 RUN apk add --no-cache bash curl wget openssl
