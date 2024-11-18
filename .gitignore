@@ -6,3 +6,4 @@
 
 # Ignore temporal files from .deb generation
 *.ddeb
+container/*
