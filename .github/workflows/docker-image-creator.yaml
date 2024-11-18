@@ -127,7 +127,7 @@ jobs:
           docker compose exec bms sudo apt update
           docker compose exec bms sudo apt install -y socat
           docker compose exec --detach  bms /usr/bin/socat -d -d pty,link=/tmp/vserial1,raw,echo=0 pty,link=/tmp/vserial2,raw,echo=0
-          timeout 15 docker compose exec bms /bin/bash -c 'ROBOT_BMS_PORT=/tmp/vserial1 STARTUP_TYPE=launch ros_launcher.sh' || exit_code=$?
+          timeout 15 docker compose exec bms /bin/bash -c 'ROBOT_BMS_PORT=/tmp/vserial1 STARTUP_TYPE=launch ros_entrypoint.sh __default_cmd__' || exit_code=$?
           if [[ $exit_code -eq 124 ]]
           then
             echo "No crash, test passed"
