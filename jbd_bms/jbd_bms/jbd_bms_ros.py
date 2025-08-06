@@ -48,7 +48,7 @@ JbdBMSROS2
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
-from robotnik_msgs.msg import BatteryStatus
+from robotnik_battery_msgs.msg import BatteryStatus
 from .jbd_bms import JbdBMS
 from .utils import copy_dataclass_to_ros_message
 

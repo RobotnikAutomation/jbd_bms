@@ -7,7 +7,7 @@
   />
   <arg
     name="desired_freq"
-    default="$(env DESIRED_FREQ 2.0)"
+    default="$(env DESIRED_FREQ 1.0)"
   />
   <arg
     name="node_name"

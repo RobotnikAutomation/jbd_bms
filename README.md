@@ -1,11 +1,11 @@
 # jbd_bms
 
-ROS2 package to communicate with the JBD Smart Battery Management System (BMS). This package is  transforms readings from a serial port of JBD BMS to ROS2 messages using robotnik_msgs.
+ROS2 package to communicate with the JBD Smart Battery Management System (BMS). This package is  transforms readings from a serial port of JBD BMS to ROS2 messages using robotnik_interfaces.
 
 ## Features
 
 - Communicates with JBD Smart BMS via serial port
-- Publishes battery status information using robotnik_msgs
+- Publishes battery status information using robotnik_interfaces
 - Configurable publishing frequency and serial port
 - Supports ROS2 Humble and superior versions
 
@@ -13,7 +13,7 @@ ROS2 package to communicate with the JBD Smart Battery Management System (BMS). 
 
 - ROS2 (Humble or newer)
 - Python 3.6+
-- robotnik_msgs package
+- robotnik_interfaces package
 - pyserial
 
 ## Installation
@@ -25,10 +25,10 @@ cd ~/ros2_ws/src
 git clone -b ros2-devel https://github.com/RobotnikAutomation/jbd_bms.git
 ```
 
-2. Install the robotnik_msgs package:
+2. Install the robotnik_interfaces package:
 
 ```bash
-git clone -b ros2-devel https://github.com/RobotnikAutomation/robotnik_msgs.git
+git clone -b ros2-devel https://github.com/RobotnikAutomation/robotnik_interfaces.git
 ```
 
 3. Install dependencies:
@@ -77,7 +77,7 @@ ros2 launch jbd_bms jbd_bms.launch.xml
 
 ### Published Topics
 
-- `~/data` (robotnik_msgs/BatteryStatus): Publishes the BMS information.
+- `~/data` (robotnik_battery_msgs/msg/BatteryStatus): Publishes the BMS information.
 
 ## Containers
 
